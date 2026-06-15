@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard IoT</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: Arial, sans-serif;
+            background: #0f172a;
+            color: #e2e8f0;
+            padding: 20px;
+        }
+
+        h1 {
+            text-align: center;
+            margin-bottom: 30px;
+            color: #38bdf8;
+        }
+
+        .alerta {
+            display: none;
+            background: #ef4444;
+            color: white;
+            text-align: center;
+            padding: 12px;
+            border-radius: 12px;
+            margin-bottom: 20px;
+            font-size: 18px;
+            font-weight: bold;
+            animation: piscar 1s infinite;
+        }
+
+        @keyframes piscar {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        .limite-box {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 24px;
+        }
+
+        .limite-box input {
+            background: #1e293b;
+            border: 1px solid #334155;
+            color: #e2e8f0;
+            padding: 8px 12px;
+            border-radius: 8px;
+            font-size: 16px;
+            width: 80px;
+            text-align: center;
+        }
+
+        .limite-box label {
+            color: #94a3b8;
+            font-size: 14px;
+        }
+
+        .cards {
+            display: flex;
+            gap: 20px;
+            justify-content: center;
+            margin-bottom: 30px;
+        }
+
+        .card {
+            background: #1e293b;
+            border-radius: 12px;
+            padding: 20px 40px;
+            text-align: center;
+        }
+
+        .card span {
+            font-size: 14px;
+            color: #94a3b8;
+        }
+
+        .card h2 {
+            font-size: 42px;
+            margin-top: 8px;
+        }
+
+        .temp { color: #f97316; }
+        .umidade { color: #38bdf8; }
+
+        .graficos {
+            display: flex;
+            gap: 20px;
+            flex-wrap: wrap;
+        }
+
+        .grafico-box {
+            background: #1e293b;
+            border-radius: 12px;
+            padding: 20px;
+            flex: 1;
+            min-width: 300px;
+        }
+
+        .grafico-box h3 {
+            margin-bottom: 15px;
+            color: #94a3b8;
+            font-size: 14px;
+            text-transform: uppercase;
+        }
+    </style>
+</head>
+<body>
+
+    <h1>Dashboard IoT — M5StickC</h1>
+
+    <div class="alerta" id="alerta">
+        ⚠️ ALERTA: Temperatura acima do limite!
+    </div>
+
+    <div class="limite-box">
+        <label>Limite de temperatura:</label>
+        <input type="number" id="limite-temp" value="42" />
+        <label>°C</label>
+    </div>
+
+    <div class="cards">
+        <div class="card">
+            <span>Temperatura Atual</span>
+            <h2 class="temp" id="temp-atual">--°C</h2>
+        </div>
+        <div class="card">
+            <span>Umidade Atual</span>
+            <h2 class="umidade" id="umidade-atual">--%</h2>
+        </div>
+        <div class="card">
+            <span>Device</span>
+            <h2 style="font-size: 18px; margin-top: 16px;" id="device-atual">--</h2>
+        </div>
+    </div>
+
+    <div class="graficos">
+        <div class="grafico-box">
+            <h3>Temperatura (°C)</h3>
+            <canvas id="grafico-temp"></canvas>
+        </div>
+        <div class="grafico-box">
+            <h3>Umidade (%)</h3>
+            <canvas id="grafico-umidade"></canvas>
+        </div>
+    </div>
+
+    <script>
+        const configBase = (label, cor) => ({
+            type: "line",
+            data: {
+                labels: [],
+                datasets: [{
+                    label: label,
+                    data: [],
+                    borderColor: cor,
+                    backgroundColor: cor + "22",
+                    borderWidth: 2,
+                    pointRadius: 3,
+                    tension: 0.4,
+                    fill: true
+                }]
+            },
+            options: {
+                animation: false,
+                scales: {
+                    x: { ticks: { color: "#94a3b8" }, grid: { color: "#1e293b" } },
+                    y: { ticks: { color: "#94a3b8" }, grid: { color: "#334155" } }
+                },
+                plugins: { legend: { display: false } }
+            }
+        });
+
+        const graficoTemp = new Chart(
+            document.getElementById("grafico-temp"),
+            configBase("Temperatura", "#f97316")
+        );
+
+        const graficoUmidade = new Chart(
+            document.getElementById("grafico-umidade"),
+            configBase("Umidade", "#38bdf8")
+        );
+
+        const source = new EventSource("/stream");
+
+        source.onmessage = (event) => {
+            const dados = JSON.parse(event.data);
+            if (dados.length === 0) return;
+
+            const ultimo = dados[0];
+            const temp = ultimo.temp;
+            const limite = parseFloat(document.getElementById("limite-temp").value);
+            const alerta = document.getElementById("alerta");
+
+            document.getElementById("temp-atual").textContent = temp + "°C";
+            document.getElementById("umidade-atual").textContent = ultimo.umidade + "%";
+            document.getElementById("device-atual").textContent = ultimo.device;
+
+            if (temp > limite) {
+                alerta.style.display = "block";
+                alerta.textContent = `⚠️ ALERTA: Temperatura ${temp}°C acima do limite de ${limite}°C!`;
+            } else {
+                alerta.style.display = "none";
+            }
+
+            const invertido = dados.slice().reverse();
+            const labels = invertido.map(d => d.criado_em);
+            const temps = invertido.map(d => d.temp);
+            const umidades = invertido.map(d => d.umidade);
+
+            graficoTemp.data.labels = labels;
+            graficoTemp.data.datasets[0].data = temps;
+            graficoTemp.update();
+
+            graficoUmidade.data.labels = labels;
+            graficoUmidade.data.datasets[0].data = umidades;
+            graficoUmidade.update();
+        };
+    </script>
+
+</body>
+</html>
